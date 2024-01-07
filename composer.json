@@ -1,0 +1,12 @@
+{
+    "name": "lab2/app",
+    "authors": [
+        {
+            "name": "kriskriskris0",
+            "email": "a7771977@gmail.com"
+        }
+    ],
+    "require": {
+        "fakerphp/faker": "^1.23"
+    }
+}
