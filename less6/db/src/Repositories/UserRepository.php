@@ -1,8 +1,10 @@
 <?php
+
 namespace src\Repositories;
 
 use PDO;
 use PDOException;
+use Psr\Log\LoggerInterface;
 use src\Exceptions\UserIncorrectDataException;
 use src\Exceptions\UserNotFoundException;
 use src\Model\Name;
@@ -11,18 +13,24 @@ use src\Model\UUID;
 
 class UserRepository implements UserRepositoryInterface {
     public function __construct(
-        private PDO $pdo
+        private PDO $pdo,
+        private LoggerInterface $logger
     ) {
     }
 
-    /**
-     * Сохраняет пользователя в репозитории.
-     *
-     * @param User $user Пользователь для сохранения.
-     * @throws UserIncorrectDataException Если данные пользователя некорректны.
-     */
+    public function userExists(string $username): bool {
+        $stmt = $this->pdo->prepare("SELECT * FROM users WHERE username = :username");
+        $stmt->execute([":username" => $username]);
+
+        return $stmt->rowCount() > 0;
+    }
+
     public function save(User $user): void {
-        $stmt = $this->pdo->prepare("INSERT INTO users (uuid, username, first_name, last_name)
+        if ($this->userExists($user->getUsername())) {
+            throw new UserIncorrectDataException("User already exists with username " . $user->getUsername());
+        }
+
+        $stmt = $this->pdo->prepare("INSERT INTO users(uuid, username, first_name, last_name)
                                     VALUES (:uuid, :username, :first_name, :last_name)");
 
         try {
@@ -32,18 +40,14 @@ class UserRepository implements UserRepositoryInterface {
                 ":first_name" => $user->getName()->getFirstName(),
                 ":last_name" => $user->getName()->getLastName()
             ]);
+
+            $this->logger->info("User saved successfully", ['uuid' => $user->getUuid()]);
         } catch (PDOException $e) {
-            throw new UserIncorrectDataException("Ошибка при добавлении пользователя: " . $e->getMessage());
+            $this->logger->error("Error saving user", ['uuid' => $user->getUuid(), 'exception' => $e]);
+            throw new UserIncorrectDataException("Error saving user: " . $e->getMessage());
         }
     }
 
-    /**
-     * Получает пользователя по имени пользователя (username).
-     *
-     * @param string $username Имя пользователя.
-     * @return User Найденный пользователь.
-     * @throws UserNotFoundException Если пользователь не найден.
-     */
     public function getByUsername(string $username): User
     {
         $stmt = $this->pdo->prepare("SELECT * FROM users WHERE username = :username");
@@ -52,15 +56,16 @@ class UserRepository implements UserRepositoryInterface {
             $stmt->execute([
                 ":username" => $username
             ]);
-
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$result) {
-                throw new UserNotFoundException("Пользователь с именем $username не найден");
+                $this->logger->warning("User not found", ['username' => $username]);
+                throw new UserNotFoundException("Cannot get user: $username");
             }
         } catch (PDOException $e) {
-            throw new UserNotFoundException("Ошибка при получении пользователя: " . $e->getMessage());
+            throw new UserNotFoundException("Error for get user: " . $e->getMessage());
         }
 
+        $this->logger->info("User get by username successfully", ['uuid' => $result['uuid']]);
         return new User(
             new UUID($result['uuid']),
             $result['username'],
@@ -71,13 +76,6 @@ class UserRepository implements UserRepositoryInterface {
         );
     }
 
-    /**
-     * Получает пользователя по UUID.
-     *
-     * @param UUID $uuid UUID пользователя.
-     * @return User Найденный пользователь.
-     * @throws UserIncorrectDataException Если данные пользователя некорректны.
-     */
     public function get(UUID $uuid): User
     {
         $stmt = $this->pdo->prepare("SELECT * FROM users WHERE uuid = :uuid");
@@ -86,18 +84,17 @@ class UserRepository implements UserRepositoryInterface {
             $stmt->execute([
                 ":uuid" => $uuid
             ]);
-
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$result) {
-                throw new UserNotFoundException("Пользователь с UUID $uuid не найден");
-            }
         } catch (PDOException $e) {
-            throw new UserIncorrectDataException("Ошибка при получении пользователя: " . $e->getMessage());
+            $this->logger->warning("User not found", ['uuid' => $uuid]);
+            throw new UserIncorrectDataException("Error when user get: " . $e->getMessage());
         }
 
+        $this->logger->info("User get successfully", ['uuid' => $uuid]);
         return new User($result['uuid'], $result['username'], new Name(
             $result['first_name'],
             $result['last_name']
         ));
     }
 }
+

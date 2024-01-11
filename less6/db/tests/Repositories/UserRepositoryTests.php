@@ -17,12 +17,7 @@ class UserRepositoryTests extends TestCase
     private PDOStatement $stmtMock;
     private UserRepository $repo;
 
-    protected function setUp(): void
-    {
-        $this->pdoMock = $this->createMock(PDO::class);
-        $this->stmtMock = $this->createMock(PDOStatement::class);
-        $this->repo = new UserRepository($this->pdoMock);
-    }
+   
 
     public function testItThrowsAnExceptionWhenUserNotFound(): void
     {
@@ -93,5 +88,39 @@ class UserRepositoryTests extends TestCase
 
         $this->assertInstanceOf(User::class, $user);
         $this->assertEquals($username, $user->getUsername());
+    }
+    protected function setUp(): void
+    {
+        $this->pdoMock = $this->createMock(PDO::class);
+        $this->stmtMock = $this->createMock(PDOStatement::class);
+
+        // Используйте тестовый логгер
+        $this->logger = new TestLogger();
+
+        $this->repo = new UserRepository($this->pdoMock, $this->logger);
+    }
+
+    public function testSaveUser(): void {
+        $logger = new TestLogger();
+        $userRepository = new UserRepository($this->createMock(PDO::class), $logger);
+
+        $user = new User(UUID::generate(), 'testuser', new Name('John', 'Doe'));
+
+        $userRepository->save($user);
+
+        // Check if the log message contains the correct UUID
+        $this->assertEquals($user->getUuid(), $logger->logMessages[0]['context']['uuid']);
+    }
+
+    public function testGetByUsername(): void {
+        $logger = new TestLogger();
+        $userRepository = new UserRepository($this->createMock(PDO::class), $logger);
+
+        $username = 'testuser';
+        $this->expectException(UserNotFoundException::class);
+        $userRepository->getByUsername($username);
+
+        // Check if the log message contains the correct username
+        $this->assertEquals($username, $logger->logMessages[0]['context']['username']);
     }
 }
