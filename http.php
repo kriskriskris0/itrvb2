@@ -1,5 +1,7 @@
 <?php
 
+use myHttp\Actions\Auth\Login;
+use myHttp\Actions\Auth\Logout;
 use myHttp\Actions\Comments\CreateComment;
 use myHttp\Actions\Likes\CreateCommentLike;
 use myHttp\Actions\Likes\CreatePostLike;
@@ -7,9 +9,11 @@ use myHttp\Actions\Likes\GetByUuidCommentLikes;
 use myHttp\Actions\Likes\GetByUuidPostLikes;
 use myHttp\Actions\Posts\CreatePost;
 use myHttp\Actions\Posts\DeletePost;
+use myHttp\Actions\Users\CreateUser;
 use myHttp\Actions\Users\FindByUsername;
 use myHttp\ErrorResponse;
 use myHttp\Request;
+use Psr\Log\LoggerInterface;
 
 
 ini_set('display_errors', 1);
@@ -17,9 +21,12 @@ error_reporting(E_ALL);
 
 $container = require __DIR__ . '/bootstrap.php';
 
+$logger = $container->get(LoggerInterface::class);
+
 try {
     $request = new Request($_GET, $_POST, $_SERVER);
 } catch (Exception $ex) {
+    $logger->warning($ex->getMessage());
     (new ErrorResponse($ex->getMessage()))->send();
     return;
 }
@@ -27,6 +34,7 @@ try {
 try {
     $path = $request->path();
 } catch (Exception $ex) {
+    $logger->warning($ex->getMessage());
     (new ErrorResponse($ex->getMessage()))->send();
     return;
 }
@@ -34,6 +42,7 @@ try {
 try {
     $method = $request->method();
 } catch (Exception $ex) {
+    $logger->warning($ex->getMessage());
     (new ErrorResponse($ex->getMessage()))->send();
     return;
 }
@@ -46,29 +55,36 @@ $routs = [
     ],
     'POST' => [
         '/posts/comment' => CreateComment::class,
-        '/posts/' => CreatePost::class,
-        '/likes/post/' => CreatePostLike::class,
-        '/likes/comment/' => CreateCommentLike::class
+        '/posts' => CreatePost::class,
+        '/likes/post' => CreatePostLike::class,
+        '/likes/comment' => CreateCommentLike::class,
+        '/user' => CreateUser::class,
+        '/login' => Login::class,
+        '/logout' => Logout::class
     ],
     'DELETE' => [
         '/posts' => DeletePost::class
     ]
 ];
 
-if (!array_key_exists($method, $routs) || !array_key_exists($path, $routs[$method])) {
-    (new ErrorResponse('Not found path'))->send();
-    return;
-}
-
-$actionClassName = $routs[$method][$path];
-
-$action = $container->get($actionClassName);
+$response = new ErrorResponse('An unknown error occurred.');
 
 try {
-    $response = $action->handle($request);
+    $path = $request->path();
+    $method = $request->method();
+
+    if (!array_key_exists($method, $routs) || !array_key_exists($path, $routs[$method])) {
+        $message = "Route not found: $method $path";
+        $logger->notice($message);
+        $response = new ErrorResponse($message);
+    } else {
+        $actionClassName = $routs[$method][$path];
+        $action = $container->get($actionClassName);
+        $response = $action->handle($request);
+    }
 } catch (Exception $ex) {
-    (new ErrorResponse($ex->getMessage()))->send();
-    return;
+    $logger->error($ex->getMessage(), ['exception' => $ex]);
+    $response = new ErrorResponse($ex->getMessage());
 }
 
 $response->send();
